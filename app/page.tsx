@@ -1,9 +1,8 @@
 import Link from "next/link";
-import { getDefaultMarket, formatCurrency } from "@/lib/calculations";
+import { getMarkets, formatCurrency } from "@/lib/calculations";
 
 export default function Home() {
-  const market = getDefaultMarket();
-  const priceToIncome = (market.medianHousePrice / market.medianSalary).toFixed(1);
+  const markets = getMarkets();
 
   return (
     <div className="max-w-5xl mx-auto px-5">
@@ -77,28 +76,50 @@ export default function Home() {
 
       <div className="divider" />
 
-      {/* Current market snapshot */}
+      {/* Market snapshots */}
       <div className="py-12">
-        <h3 className="text-xs font-semibold tracking-wider mb-5" style={{ color: 'var(--text-tertiary)' }}>
-          <span className="uppercase">Current market snapshot — {market.flag} {market.name} 2026 </span><span className="font-light">[in {market.currency}]</span>
+        <h3 className="text-xs font-semibold uppercase tracking-wider mb-5" style={{ color: 'var(--text-tertiary)' }}>
+          2026 Market Snapshot
         </h3>
-        <div className="grid grid-cols-3 gap-5">
-          <div className="stat-card">
-            <div className="text-2xl font-bold mb-0.5" style={{ color: 'var(--foreground)' }}>
-              {formatCurrency(market.medianHousePrice, market).replace(',000,000', 'M').replace(',000', 'K')}
-            </div>
-            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Median house price</div>
+        <div className="card overflow-hidden">
+          {/* Table header */}
+          <div className="grid grid-cols-[1fr_auto_auto_auto] md:grid-cols-[1fr_120px_120px_80px] gap-x-4 md:gap-x-6 px-5 py-3 text-xs font-semibold uppercase tracking-wider"
+            style={{ borderBottom: '2px solid var(--border)', color: 'var(--text-tertiary)' }}
+          >
+            <div>Market</div>
+            <div className="text-right">Median Price</div>
+            <div className="text-right">Median Salary</div>
+            <div className="text-right">Ratio</div>
           </div>
-          <div className="stat-card">
-            <div className="text-2xl font-bold mb-0.5" style={{ color: 'var(--foreground)' }}>
-              {formatCurrency(market.medianSalary, market).replace(',000', 'K')}
-            </div>
-            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Median salary</div>
-          </div>
-          <div className="stat-card">
-            <div className="text-2xl font-bold mb-0.5" style={{ color: 'var(--foreground)' }}>{priceToIncome}×</div>
-            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Price-to-income ratio</div>
-          </div>
+          {/* Rows */}
+          {markets.map((market, i) => {
+            const priceToIncome = (market.medianHousePrice / market.medianSalary).toFixed(1);
+            const shortPrice = formatCurrency(market.medianHousePrice, market)
+              .replace(',000,000', 'M')
+              .replace(',000', 'K');
+            const shortSalary = formatCurrency(market.medianSalary, market)
+              .replace(',000', 'K');
+
+            return (
+              <div
+                key={market.id}
+                className="grid grid-cols-[1fr_auto_auto_auto] md:grid-cols-[1fr_120px_120px_80px] gap-x-4 md:gap-x-6 items-center px-5 py-3.5"
+                style={{
+                  borderBottom: i < markets.length - 1 ? '1px solid var(--border-light)' : 'none',
+                  opacity: market.enabled ? 1 : 0.5,
+                }}
+              >
+                <div className="flex items-center gap-2.5 text-sm font-medium">
+                  <span>{market.flag}</span>
+                  <span>{market.name}</span>
+                  <span className="text-xs font-normal" style={{ color: 'var(--text-tertiary)' }}>{market.currency}</span>
+                </div>
+                <div className="text-sm font-semibold text-right">{shortPrice}</div>
+                <div className="text-sm text-right" style={{ color: 'var(--text-secondary)' }}>{shortSalary}</div>
+                <div className="text-sm font-bold text-right" style={{ color: 'var(--danger)' }}>{priceToIncome}×</div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
