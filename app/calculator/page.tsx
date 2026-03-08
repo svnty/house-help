@@ -262,7 +262,7 @@ function ResultsScreen({
                         <p>
                             If a young person dedicates the same percentage of today&apos;s median salary as you did,
                             they{isImpossible
-                                ? ' can\'t even cover the interest on a median-priced home.'
+                                ? ' can\'t even cover the interest on a home similar to yours.'
                                 : ` would need ${result.yearsToPayOffToday} years to pay it off — at ${(result.currentInterestRate * 100).toFixed(0)}% interest.`}
                         </p>
                     </div>
