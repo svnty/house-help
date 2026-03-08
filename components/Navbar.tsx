@@ -11,7 +11,7 @@ export default function Navbar() {
   const links = [
     { href: '/', label: 'Home' },
     { href: '/calculator', label: 'Calculator' },
-    { href: '/explore', label: 'Explore' },
+    // { href: '/explore', label: 'Explore' },
   ];
 
   return (
