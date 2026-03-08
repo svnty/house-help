@@ -6,7 +6,7 @@ import Navbar from "@/components/Navbar";
 export const metadata: Metadata = {
   title: "HouseHelp — Housing Affordability Calculator",
   description:
-    "Understand the real impact of housing affordability changes. Compare what buying a house meant then versus what it means for young Australians today.",
+    "Understand the real impact of housing affordability changes. Compare what buying a house meant then versus what it means for young people today.",
 };
 
 export default function RootLayout({

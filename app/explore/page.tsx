@@ -7,7 +7,7 @@ export default function ExplorePage() {
           Where Should I Live?
         </h1>
         <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-          We&apos;re building a tool to help young Australians find areas with
+          We&apos;re building a tool to help young people find areas with
           low unemployment, affordable housing, and strong salaries.
         </p>
       </div>
