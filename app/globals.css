@@ -169,6 +169,11 @@ body {
   color: var(--danger);
 }
 
+.badge-success {
+  background: var(--accent-light);
+  color: #065f46;
+}
+
 /* Progress bar */
 .progress-bar {
   width: 100%;

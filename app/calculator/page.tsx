@@ -6,6 +6,7 @@ import {
   formatCurrency as rawFormatCurrency,
   formatPercent,
   getMarkets,
+  getMarket,
   getDefaultMarket,
   type BoomerInput,
   type CalculationResult,
@@ -112,18 +113,28 @@ function ResultsScreen({
   onReset: () => void;
 }) {
   const isImpossible = result.yearsToPayOffToday >= 999;
+  const isEasierToday = !isImpossible && result.yearsToPayOffToday < input.yearsToPayOff;
   const multiplier = isImpossible ? '∞' : (result.yearsToPayOffToday / input.yearsToPayOff).toFixed(1);
   const market = result.market;
   const formatCurrency = (amount: number) => rawFormatCurrency(amount, market);
+  const salaryGap = result.requiredSalary - result.currentMedianSalary;
 
   return (
     <div className="max-w-2xl mx-auto px-5 py-10 md:py-16">
       {/* Headline */}
       <div className="mb-8 fade-in">
-        <span className="badge badge-danger mb-4">Reality Check</span>
+        <span className={`badge ${isEasierToday ? 'badge-success' : 'badge-danger'} mb-4`}>
+          {isEasierToday ? 'Surprisingly Affordable' : 'Reality Check'}
+        </span>
         <h1 className="text-2xl md:text-3xl font-bold leading-snug mb-2">
           {isImpossible ? (
             <>A young person today <span className='font-extrabold' style={{ color: 'var(--danger)' }}>could never pay this off</span></>
+          ) : isEasierToday ? (
+            <>A young person could pay this off in{' '}
+              <span style={{ color: 'var(--accent)' }}>
+                <AnimatedNumber value={result.yearsToPayOffToday} decimals={1} /> years
+              </span>
+            </>
           ) : (
             <>It would take a young person{' '}
               <span style={{ color: 'var(--danger)' }}>
@@ -135,7 +146,9 @@ function ResultsScreen({
         <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
           {isImpossible
             ? 'Their mortgage repayments wouldn\'t even cover the interest.'
-            : `You paid yours off in ${input.yearsToPayOff} years. That\u2019s ${multiplier}× longer today.`}
+            : isEasierToday
+              ? `You paid yours off in ${input.yearsToPayOff} years. Today, an equivalent home could be paid off faster.`
+              : `You paid yours off in ${input.yearsToPayOff} years. That's ${multiplier}× longer today.`}
         </p>
       </div>
 
@@ -225,26 +238,33 @@ function ResultsScreen({
       {/* Required salary callout */}
       <div
         className="rounded-lg p-4 mb-6 fade-in fade-in-d2"
-        style={{ background: 'var(--danger-light)', border: '1px solid #fecaca' }}
+        style={{
+          background: salaryGap > 0 ? 'var(--danger-light)' : 'var(--accent-light)',
+          border: salaryGap > 0 ? '1px solid #fecaca' : '1px solid var(--accent-border)',
+        }}
       >
         <div className="flex gap-3">
           <span className="text-base mt-0.5 shrink-0">💰</span>
-          <div className="text-sm leading-relaxed" style={{ color: '#991b1b' }}>
-            <p className="font-medium mb-1">The salary a young person would actually need</p>
+          <div className="text-sm leading-relaxed" style={{ color: salaryGap > 0 ? '#991b1b' : '#065f46' }}>
+            <p className="font-medium mb-1">
+              {salaryGap > 0 ? 'The salary a young person would actually need' : 'What a young person would need to earn'}
+            </p>
             <p>
               You spent {formatPercent(result.boomerRepaymentToIncomePercent)} of your income on
               repayments and paid off your house in {input.yearsToPayOff} years.
-              For a young person to do the exact same thing today — pay off the median house in{' '}
+              For a young person to do the exact same thing today — pay off an equivalent house in{' '}
               {input.yearsToPayOff} years, spending the same {formatPercent(result.boomerRepaymentToIncomePercent)} of
               their income — they would need to earn{' '}
-              <strong className="text-base" style={{ color: '#7f1d1d' }}>
+              <strong className="text-base" style={{ color: salaryGap > 0 ? '#7f1d1d' : '#064e3b' }}>
                 {formatCurrency(result.requiredSalary)}/year
               </strong>.
             </p>
             <p className="mt-2">
-              The current median salary is {formatCurrency(result.currentMedianSalary)}.
-              That&apos;s a gap of{' '}
-              <strong>{formatCurrency(result.requiredSalary - result.currentMedianSalary)}</strong>.
+              The current median salary is {formatCurrency(result.currentMedianSalary)}.{' '}
+              {salaryGap > 0
+                ? <>That&apos;s a gap of <strong>{formatCurrency(salaryGap)}</strong>.</>
+                : <>That&apos;s actually <strong>{formatCurrency(Math.abs(salaryGap))}</strong> below the median.</>
+              }
             </p>
           </div>
         </div>
@@ -253,17 +273,22 @@ function ResultsScreen({
       {/* Key takeaway */}
       <div
         className="rounded-lg p-4 mb-6 fade-in fade-in-d2"
-        style={{ background: 'var(--warning-light)', border: '1px solid #fde68a' }}
+        style={{
+          background: isEasierToday ? 'var(--accent-light)' : 'var(--warning-light)',
+          border: isEasierToday ? '1px solid var(--accent-border)' : '1px solid #fde68a',
+        }}
       >
         <div className="flex gap-3">
-          <span className="text-base mt-0.5 shrink-0">⚠️</span>
-          <div className="text-sm leading-relaxed" style={{ color: '#92400e' }}>
+          <span className="text-base mt-0.5 shrink-0">{isEasierToday ? '✅' : '⚠️'}</span>
+          <div className="text-sm leading-relaxed" style={{ color: isEasierToday ? '#065f46' : '#92400e' }}>
             <p className="font-medium mb-1">The key takeaway</p>
             <p>
-              If a young person dedicates the same percentage of today&apos;s median salary as you did,
-              they{isImpossible
-                ? ' can\'t even cover the interest on a home similar to yours.'
-                : ` would need ${result.yearsToPayOffToday} years to pay it off — at ${(result.currentInterestRate * 100).toFixed(0)}% interest.`}
+              {isImpossible
+                ? 'If a young person dedicates the same percentage of today\'s median salary as you did, they can\'t even cover the interest on a home similar to yours.'
+                : isEasierToday
+                  ? `A young person dedicating the same percentage of today's median salary could pay this off in ${result.yearsToPayOffToday.toFixed(1)} years.`
+                  : `If a young person dedicates the same percentage of today's median salary as you did, they would need ${result.yearsToPayOffToday} years to pay it off - at ${(result.currentInterestRate * 100).toFixed(0)}% interest.`
+              }
             </p>
           </div>
         </div>
@@ -345,6 +370,7 @@ export default function CalculatorPage() {
   const [result, setResult] = useState<CalculationResult | null>(null);
   const [selectedMarket, setSelectedMarket] = useState<MarketId>('AU');
   const markets = getMarkets();
+  const currentMarket = getMarket(selectedMarket);
   const [input, setInput] = useState<BoomerInput>({
     housePrice: 0, annualSalary: 0, yearsToPayOff: 0, yearPurchased: 1990, market: 'AU',
   });
@@ -444,10 +470,10 @@ export default function CalculatorPage() {
           {/* House Price */}
           <div>
             <label className="block text-sm font-medium mb-1.5">
-              What did you pay for your house?
+              What did you pay for your house? <span style={{ color: 'var(--text-tertiary)' }}>({currentMarket.currency})</span>
             </label>
             <div className="relative">
-              <span className={`absolute left-4.5 top-1/2 -translate-y-1/2 text-sm ${formValues.housePrice ? 'hidden' : ''}`} style={{ color: 'var(--text-tertiary)' }}>$</span>
+              <span className={`absolute left-4.5 top-1/2 -translate-y-1/2 text-sm ${formValues.housePrice ? 'hidden' : ''}`} style={{ color: 'var(--text-tertiary)' }}>{currentMarket.currency === 'GBP' ? '£' : '$'}</span>
               <input
                 type="text"
                 inputMode="numeric"
@@ -466,10 +492,10 @@ export default function CalculatorPage() {
           {/* Salary */}
           <div>
             <label className="block text-sm font-medium mb-1.5">
-              What was your average annual salary?
+              What was your average annual salary? <span style={{ color: 'var(--text-tertiary)' }}>({currentMarket.currency})</span>
             </label>
             <div className="relative">
-              <span className={`absolute left-4.5 top-1/2 -translate-y-1/2 text-sm ${formValues.annualSalary ? 'hidden' : ''}`} style={{ color: 'var(--text-tertiary)' }}>$</span>
+              <span className={`absolute left-4.5 top-1/2 -translate-y-1/2 text-sm ${formValues.annualSalary ? 'hidden' : ''}`} style={{ color: 'var(--text-tertiary)' }}>{currentMarket.currency === 'GBP' ? '£' : '$'}</span>
               <input
                 type="text"
                 inputMode="numeric"
