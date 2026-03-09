@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   calculateBoomerMoment,
+  calculateMonthlyRepayment,
   formatCurrency as rawFormatCurrency,
   formatPercent,
   getMarkets,
@@ -99,6 +100,179 @@ function StatRow({ label, thenValue, nowValue, highlight = false }: {
       <div className={`text-sm font-semibold text-right`} style={{ color: highlight ? 'var(--danger)' : 'var(--foreground)' }}>
         {nowValue}
       </div>
+    </div>
+  );
+}
+
+function AffordabilityScreen({
+  result,
+  input,
+  onReset,
+}: {
+  result: CalculationResult;
+  input: BoomerInput;
+  onReset: () => void;
+}) {
+  const market = result.market;
+  const formatCurrency = (amount: number) => rawFormatCurrency(amount, market);
+  const monthlyRepayment = result.boomerMonthlyRepayment;
+  const monthlyIncome = input.annualSalary / 12;
+  const repaymentPercent = (monthlyRepayment / monthlyIncome) * 100;
+  const isStressed = repaymentPercent > 30;
+  // Salary needed to keep mortgage at 30% of income
+  const salaryFor30Percent = Math.round((monthlyRepayment / 0.30) * 12);
+  // Calculate actual median repayment % from raw median values (not scaled)
+  const medianMonthlyRepayment = calculateMonthlyRepayment(
+    result.currentMedianHousePrice, result.currentInterestRate, market.defaultLoanTermYears
+  );
+  const medianRepaymentPercent = (medianMonthlyRepayment / (result.currentMedianSalary / 12)) * 100;
+
+  return (
+    <div className="max-w-2xl mx-auto px-5 py-10 md:py-16">
+      {/* Headline */}
+      <div className="mb-8 fade-in">
+        <span className={`badge ${isStressed ? 'badge-danger' : 'badge-success'} mb-4`}>
+          Mortgage Breakdown
+        </span>
+        <h1 className="text-2xl md:text-3xl font-bold leading-snug mb-2">
+          Your mortgage takes{' '}
+          <span style={{ color: isStressed ? 'var(--danger)' : 'var(--accent)', display: 'inline-block', fontVariantNumeric: 'tabular-nums', minWidth: '4.5ch' }}>
+            <AnimatedNumber value={repaymentPercent} decimals={1} suffix="%" />
+          </span>
+          {' '}of your income{repaymentPercent > 100 ? <>.<span className='text-red-800 font-extrabold'>This is impossible.</span></> : ''}
+        </h1>
+        <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+          {isStressed
+            ? 'Financial advisors generally recommend keeping mortgage repayments below 30% of gross income.'
+            : 'This is within the commonly recommended 30% threshold.'}
+        </p>
+      </div>
+
+      {/* Key stats */}
+      <div className="card p-6 mb-6 fade-in fade-in-d1">
+        <div className="space-y-0">
+          <div className="grid grid-cols-2 gap-4 py-3" style={{ borderBottom: '1px solid var(--border-light)' }}>
+            <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>House price</div>
+            <div className="text-sm font-semibold text-right">{formatCurrency(input.housePrice)}</div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 py-3" style={{ borderBottom: '1px solid var(--border-light)' }}>
+            <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Your salary</div>
+            <div className="text-sm font-semibold text-right">{formatCurrency(input.annualSalary)}/yr</div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 py-3" style={{ borderBottom: '1px solid var(--border-light)' }}>
+            <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Interest rate ({input.yearPurchased})</div>
+            <div className="text-sm font-semibold text-right">{(result.boomerInterestRate * 100).toFixed(1)}%</div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 py-3" style={{ borderBottom: '1px solid var(--border-light)' }}>
+            <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Loan term</div>
+            <div className="text-sm font-semibold text-right">{input.yearsToPayOff} years</div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 py-3" style={{ borderBottom: '1px solid var(--border-light)' }}>
+            <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Monthly repayment</div>
+            <div className="text-sm font-bold text-right">{formatCurrency(Math.round(monthlyRepayment))}</div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 py-3" style={{ borderBottom: '1px solid var(--border-light)' }}>
+            <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Price-to-income ratio</div>
+            <div className="text-sm font-bold text-right" style={{ color: 'var(--danger)' }}>
+              {result.boomerPriceToIncomeRatio.toFixed(1)}×
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 py-3">
+            <div className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Repayment % of income</div>
+            <div className="text-sm font-bold text-right" style={{ color: isStressed ? 'var(--danger)' : 'var(--accent)' }}>
+              {repaymentPercent.toFixed(1)}%
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 30% threshold callout */}
+      <div
+        className="rounded-lg p-4 mb-6 fade-in fade-in-d2"
+        style={{
+          background: isStressed ? 'var(--danger-light)' : 'var(--accent-light)',
+          border: isStressed ? '1px solid #fecaca' : '1px solid var(--accent-border)',
+        }}
+      >
+        <div className="flex gap-3">
+          <span className="text-base mt-0.5 shrink-0">💰</span>
+          <div className="text-sm leading-relaxed" style={{ color: isStressed ? '#991b1b' : '#065f46' }}>
+            <p className="font-medium mb-1">
+              {isStressed ? 'Mortgage stress' : 'Within recommended range'}
+            </p>
+            {isStressed ? (
+              <p>
+                To keep repayments at 30% of income on this mortgage, you would need to earn{' '}
+                <strong style={{ color: isStressed ? '#7f1d1d' : '#064e3b' }}>
+                  {formatCurrency(salaryFor30Percent)}/year
+                </strong>.
+                A typical salary in {market.name} is {formatCurrency(result.currentMedianSalary)}.
+              </p>
+            ) : (
+              <p>
+                Your repayments are {repaymentPercent.toFixed(1)}% of your gross income,
+                which is below the 30% threshold generally recommended by financial advisors.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Median comparison */}
+      <div
+        className="rounded-lg p-4 mb-6 fade-in fade-in-d2"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+      >
+        <div className="flex gap-3">
+          <span className="text-base mt-0.5 shrink-0">📊</span>
+          <div className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+            <p className="font-medium mb-1" style={{ color: 'var(--foreground)' }}>
+              How this compares to the national median
+            </p>
+            <p>
+              The current median house price in {market.name} is{' '}
+              <strong style={{ color: 'var(--foreground)' }}>{formatCurrency(result.currentMedianHousePrice)}</strong>{' '}
+              and the median salary is{' '}
+              <strong style={{ color: 'var(--foreground)' }}>{formatCurrency(result.currentMedianSalary)}</strong>.{' '}
+              Someone earning the median salary paying off {formatCurrency(result.currentMedianHousePrice)} over{' '}
+              {market.defaultLoanTermYears} years at {(result.currentInterestRate * 100).toFixed(1)}% would spend{' '}
+              <strong style={{ color: 'var(--foreground)' }}>
+                {medianRepaymentPercent.toFixed(1)}%
+              </strong>{' '}
+              of their income on repayments.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Sources */}
+      <details className="card mb-8 fade-in fade-in-d3">
+        <summary className="px-5 py-3 text-sm font-medium cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
+          Sources &amp; methodology
+        </summary>
+        <div className="px-5 pb-4 text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            Sources ({market.name}):
+          </p>
+          <p className="text-xs ml-3" style={{ color: 'var(--text-tertiary)' }}>
+            Mortgage rate — {market.rateSource}.
+          </p>
+          <p className="text-xs ml-3" style={{ color: 'var(--text-tertiary)' }}>
+            Median house price — {market.housePriceSource}.
+          </p>
+          <p className="text-xs ml-3" style={{ color: 'var(--text-tertiary)' }}>
+            Median salary — {market.salarySource}.
+          </p>
+          <p className="text-xs italic mt-1" style={{ color: 'var(--text-tertiary)' }}>
+            NOTE: Simplified model; does not account for deposit, LMI, or stamp duty.
+          </p>
+        </div>
+      </details>
+
+      {/* Reset */}
+      <button onClick={onReset} className="bg-neutral-100! hover:bg-neutral-200! btn-secondary">
+        ← Try different values
+      </button>
     </div>
   );
 }
@@ -418,7 +592,12 @@ export default function CalculatorPage() {
   }, []);
 
   if (phase === 'loading') return <LoadingScreen />;
-  if (phase === 'results' && result) return <ResultsScreen result={result} input={input} onReset={handleReset} />;
+  if (phase === 'results' && result) {
+    const isRecentPurchase = input.yearPurchased >= 2015;
+    return isRecentPurchase
+      ? <AffordabilityScreen result={result} input={input} onReset={handleReset} />
+      : <ResultsScreen result={result} input={input} onReset={handleReset} />;
+  }
 
   return (
     <div className="max-w-lg mx-auto px-5 py-10 md:py-16">
