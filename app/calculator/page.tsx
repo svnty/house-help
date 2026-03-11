@@ -294,7 +294,7 @@ function ResultsScreen({
   const salaryGap = result.requiredSalary - result.currentMedianSalary;
 
   return (
-    <div className="max-w-2xl mx-auto px-5 py-10 md:py-16">
+    <div className="max-w-2xl mx-auto px-5 py-10">
       {/* Headline */}
       <div className="mb-8 fade-in">
         <span className={`badge ${isEasierToday ? 'badge-success' : 'badge-danger'} mb-4`}>
