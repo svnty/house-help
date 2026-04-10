@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   calculateBoomerMoment,
+  calculatePreciseResult,
   calculateMonthlyRepayment,
   formatCurrency as rawFormatCurrency,
   formatPercent,
@@ -13,9 +14,10 @@ import {
   type CalculationResult,
   type MarketId,
   type MarketData,
+  type SuburbData,
 } from '@/lib/calculations';
 
-type Phase = 'input' | 'loading' | 'results';
+type Phase = 'input' | 'loading' | 'results' | 'precise';
 
 function AnimatedNumber({
   value,
@@ -108,10 +110,16 @@ function AffordabilityScreen({
   result,
   input,
   onReset,
+  onSuburbLookup,
+  isSearchingSuburb,
+  suburbSearchError,
 }: {
   result: CalculationResult;
   input: BoomerInput;
   onReset: () => void;
+  onSuburbLookup: (query: string) => void;
+  isSearchingSuburb: boolean;
+  suburbSearchError: string | null;
 }) {
   const market = result.market;
   const formatCurrency = (amount: number) => rawFormatCurrency(amount, market);
@@ -186,6 +194,21 @@ function AffordabilityScreen({
         </div>
       </div>
 
+      {/* Salary source note for affordability screen */}
+      <div
+        className="rounded-lg p-3 mb-6 fade-in fade-in-d1 flex items-start gap-2.5"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+      >
+        <span className="text-sm shrink-0 mt-px">📊</span>
+        <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+          <strong style={{ color: 'var(--foreground)' }}>About the salary data: </strong>
+          The median salary references below use the{' '}
+          <strong>{market.name} nationwide median full-time salary</strong> of{' '}
+          <strong style={{ color: 'var(--foreground)' }}>{formatCurrency(result.currentMedianSalary)}/yr</strong>,
+          sourced from {market.salarySource}.
+        </p>
+      </div>
+
       {/* 30% threshold callout */}
       <div
         className="rounded-lg p-4 mb-6 fade-in fade-in-d2"
@@ -245,6 +268,15 @@ function AffordabilityScreen({
         </div>
       </div>
 
+      {/* Want more precise calculations? — only for AU market */}
+      {market.id === 'AU' && false && (
+        <SuburbLookupBox
+          onLookup={onSuburbLookup}
+          isSearching={isSearchingSuburb}
+          searchError={suburbSearchError}
+        />
+      )}
+
       {/* Sources */}
       <details className="card mb-8 fade-in fade-in-d3">
         <summary className="px-5 py-3 text-sm font-medium cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
@@ -277,14 +309,75 @@ function AffordabilityScreen({
   );
 }
 
+function SuburbLookupBox({
+  onLookup,
+  isSearching,
+  searchError,
+}: {
+  onLookup: (query: string) => void;
+  isSearching: boolean;
+  searchError: string | null;
+}) {
+  const [query, setQuery] = useState('');
+
+  return (
+    <div className="card p-6 mb-6 fade-in fade-in-d3">
+      <h3 className="font-semibold text-base mb-1">Want more precise calculations?</h3>
+      <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
+        The numbers above use national medians. Enter your suburb to see exactly
+        what it costs in your area — using real local house prices.
+      </p>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          className="input-field flex-1 text-sm"
+          placeholder="e.g. Pyrmont 2009, or just 2009"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && query.trim() && onLookup(query.trim())}
+          disabled={isSearching}
+        />
+        <button
+          className="btn-primary text-sm"
+          disabled={isSearching || !query.trim()}
+          onClick={() => onLookup(query.trim())}
+        >
+          {isSearching ? (
+            <span className="flex items-center gap-2">
+              <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
+              Looking up…
+            </span>
+          ) : (
+            'Look up'
+          )}
+        </button>
+      </div>
+      {searchError && (
+        <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>
+          {searchError}
+        </p>
+      )}
+      <p className="text-xs mt-3" style={{ color: 'var(--text-tertiary)' }}>
+        Uses suburb median prices from government property sales reports. Covers ~170 major Australian suburbs.
+      </p>
+    </div>
+  );
+}
+
 function ResultsScreen({
   result,
   input,
   onReset,
+  onSuburbLookup,
+  isSearchingSuburb,
+  suburbSearchError,
 }: {
   result: CalculationResult;
   input: BoomerInput;
   onReset: () => void;
+  onSuburbLookup: (query: string) => void;
+  isSearchingSuburb: boolean;
+  suburbSearchError: string | null;
 }) {
   const isImpossible = result.yearsToPayOffToday >= 999;
   const isEasierToday = !isImpossible && result.yearsToPayOffToday < input.yearsToPayOff;
@@ -344,11 +437,17 @@ function ResultsScreen({
           thenValue={formatCurrency(input.housePrice)}
           nowValue={formatCurrency(result.scaledTodayHousePrice)}
         />
-        <StatRow
-          label="Annual salary"
-          thenValue={formatCurrency(input.annualSalary)}
-          nowValue={formatCurrency(result.currentMedianSalary)}
-        />
+        {/* Annual salary row with national median annotation */}
+        <div className="grid grid-cols-3 gap-4 py-3" style={{ borderBottom: '1px solid var(--border-light)' }}>
+          <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Annual salary</div>
+          <div className="text-sm font-medium text-right">{formatCurrency(input.annualSalary)}</div>
+          <div className="text-right">
+            <div className="text-sm font-semibold">{formatCurrency(result.currentMedianSalary)}</div>
+            {/* <div className="text-[10px] mt-0.5 leading-tight" style={{ color: 'var(--text-tertiary)' }}>
+              national median ⓘ
+            </div> */}
+          </div>
+        </div>
         <StatRow
           label="Interest rate"
           thenValue={`${(result.boomerInterestRate * 100).toFixed(1)}%`}
@@ -380,6 +479,19 @@ function ResultsScreen({
           <div className="text-sm font-bold text-right" style={{ color: 'var(--danger)' }}>
             {isImpossible ? '∞' : `${result.yearsToPayOffToday} years`}
           </div>
+        </div>
+
+        {/* Salary source note */}
+        <div
+          className="mt-3 px-3 py-2 rounded-md flex items-start gap-2"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border-light)' }}
+        >
+          <span className="text-xs shrink-0 mt-px">📊</span>
+          <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
+            <strong style={{ color: 'var(--text-secondary)' }}>Why {formatCurrency(result.currentMedianSalary)}?</strong>{' '}
+            This is the nationwide median full-time salary in {market.name}, sourced from {market.salarySource}.
+            We use this to represent what a typical young worker earns today.
+          </p>
         </div>
       </div>
 
@@ -468,28 +580,14 @@ function ResultsScreen({
         </div>
       </div>
 
-      {/* Want more precise calculations? */}
-      <div className="card p-6 mb-6 fade-in fade-in-d3">
-        <h3 className="font-semibold text-base mb-1">Want more precise calculations?</h3>
-        <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
-          The numbers above use national medians. Enter your suburb to see exactly
-          what it costs in your area — using real local house prices and salary data.
-        </p>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            className="input-field flex-1 text-sm"
-            placeholder="Enter your suburb or postcode"
-            disabled
-          />
-          <button className="btn-primary text-sm" disabled>
-            Look up
-          </button>
-        </div>
-        <p className="text-xs mt-3" style={{ color: 'var(--text-tertiary)' }}>
-          Suburb-level data is coming soon. This will use real median prices for your specific area.
-        </p>
-      </div>
+      {/* Want more precise calculations? — only for AU market */}
+      {market.id === 'AU' && false && (
+        <SuburbLookupBox
+          onLookup={onSuburbLookup}
+          isSearching={isSearchingSuburb}
+          searchError={suburbSearchError}
+        />
+      )}
 
       {/* Methodology */}
       <details className="card mb-8 fade-in fade-in-d3">
@@ -539,9 +637,264 @@ function ResultsScreen({
   );
 }
 
+function PreciseResultsScreen({
+  result,
+  nationalResult,
+  input,
+  suburbData,
+  onReset,
+  onBackToNational,
+}: {
+  result: CalculationResult;
+  nationalResult: CalculationResult;
+  input: BoomerInput;
+  suburbData: SuburbData;
+  onReset: () => void;
+  onBackToNational: () => void;
+}) {
+  const isImpossible = result.yearsToPayOffToday >= 999;
+  const isEasierToday = !isImpossible && result.yearsToPayOffToday < input.yearsToPayOff;
+  const multiplier = isImpossible ? '∞' : (result.yearsToPayOffToday / input.yearsToPayOff).toFixed(1);
+  const market = result.market;
+  const formatCurrency = (amount: number) => rawFormatCurrency(amount, market);
+  const salaryGap = result.requiredSalary - result.currentMedianSalary;
+  const priceDiff = suburbData.medianPrice - nationalResult.currentMedianHousePrice;
+  const priceDiffPercent = ((priceDiff / nationalResult.currentMedianHousePrice) * 100).toFixed(0);
+  const isMoreExpensive = priceDiff > 0;
+
+  return (
+    <div className="max-w-2xl mx-auto px-5 py-10">
+      {/* Location header */}
+      <div className="mb-8 fade-in">
+        <div className="flex items-center gap-2 mb-4">
+          <span
+            className="badge"
+            style={{
+              background: 'linear-gradient(135deg, #dbeafe, #ede9fe)',
+              color: '#4338ca',
+            }}
+          >
+            📍 Local Data
+          </span>
+          <span
+            className="badge"
+            style={{
+              background: isEasierToday ? 'var(--accent-light)' : 'var(--danger-light)',
+              color: isEasierToday ? '#065f46' : 'var(--danger)',
+            }}
+          >
+            {isEasierToday ? 'Surprisingly Affordable' : 'Reality Check'}
+          </span>
+        </div>
+        <h1 className="text-2xl md:text-3xl font-bold leading-snug mb-1">
+          Results for{' '}
+          <span style={{ color: '#4338ca' }}>
+            {suburbData.suburb}, {suburbData.state} {suburbData.postcode}
+          </span>
+        </h1>
+        <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
+          {isImpossible
+            ? 'In this suburb, a young person could never pay this off on the median salary.'
+            : isEasierToday
+              ? `In this suburb, a young person could pay off an equivalent home in ${result.yearsToPayOffToday} years.`
+              : `In this suburb, it would take a young person ${result.yearsToPayOffToday} years — that's ${multiplier}× longer than your ${input.yearsToPayOff} years.`}
+        </p>
+      </div>
+
+      {/* Suburb vs National callout */}
+      <div
+        className="rounded-lg p-4 mb-6 fade-in fade-in-d1"
+        style={{
+          background: 'linear-gradient(135deg, #eef2ff, #f5f3ff)',
+          border: '1px solid #c7d2fe',
+        }}
+      >
+        <div className="flex gap-3">
+          <span className="text-base mt-0.5 shrink-0">🏘️</span>
+          <div className="text-sm leading-relaxed" style={{ color: '#3730a3' }}>
+            <p className="font-medium mb-1">Suburb vs national median</p>
+            <p>
+              The median house price in <strong>{suburbData.suburb}</strong> is{' '}
+              <strong>{formatCurrency(suburbData.medianPrice)}</strong>,
+              which is{' '}
+              <strong>
+                {isMoreExpensive
+                  ? `${priceDiffPercent}% above`
+                  : `${Math.abs(Number(priceDiffPercent))}% below`}
+              </strong>{' '}
+              the national median of {formatCurrency(nationalResult.currentMedianHousePrice)}.
+              {suburbData.dataDate && (
+                <span style={{ color: '#6366f1' }}> Data from {suburbData.dataDate}.</span>
+              )}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Comparison table */}
+      <div className="card p-6 mb-6 fade-in fade-in-d1">
+        {/* Header */}
+        <div className="grid grid-cols-3 gap-4 pb-3 mb-1" style={{ borderBottom: '2px solid var(--border)' }}>
+          <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }} />
+          <div className="text-xs font-semibold uppercase tracking-wider text-right" style={{ color: 'var(--accent)' }}>
+            Your Era
+          </div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-right" style={{ color: '#4338ca' }}>
+            Today ({suburbData.postcode})
+          </div>
+        </div>
+
+        <StatRow
+          label="House price"
+          thenValue={formatCurrency(input.housePrice)}
+          nowValue={formatCurrency(result.scaledTodayHousePrice)}
+        />
+        <StatRow
+          label="Suburb median"
+          thenValue="—"
+          nowValue={formatCurrency(suburbData.medianPrice)}
+        />
+        {/* Annual salary row with national median annotation */}
+        <div className="grid grid-cols-3 gap-4 py-3" style={{ borderBottom: '1px solid var(--border-light)' }}>
+          <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>Annual salary</div>
+          <div className="text-sm font-medium text-right">{formatCurrency(input.annualSalary)}</div>
+          <div className="text-right">
+            <div className="text-sm font-semibold">{formatCurrency(result.currentMedianSalary)}</div>
+            {/* <div className="text-[10px] mt-0.5 leading-tight" style={{ color: 'var(--text-tertiary)' }}>
+              national median ⓘ
+            </div> */}
+          </div>
+        </div>
+        <StatRow
+          label="Interest rate"
+          thenValue={`${(result.boomerInterestRate * 100).toFixed(1)}%`}
+          nowValue={`${(result.currentInterestRate * 100).toFixed(1)}%`}
+        />
+        <StatRow
+          label="Price-to-income ratio"
+          thenValue={`${result.boomerPriceToIncomeRatio.toFixed(1)}×`}
+          nowValue={`${result.todayPriceToIncomeRatio.toFixed(1)}×`}
+          highlight
+        />
+        <StatRow
+          label="Monthly repayment"
+          thenValue={formatCurrency(Math.round(result.boomerMonthlyRepayment))}
+          nowValue={formatCurrency(Math.round(result.todayMonthlyRepayment))}
+          highlight
+        />
+        <StatRow
+          label="Repayment % of income"
+          thenValue={formatPercent(result.boomerRepaymentToIncomePercent)}
+          nowValue={formatPercent(result.todayRepaymentToIncomePercent)}
+          highlight
+        />
+        <div className="grid grid-cols-3 gap-4 py-3">
+          <div className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Years to pay off</div>
+          <div className="text-sm font-semibold text-right" style={{ color: 'var(--accent)' }}>
+            {input.yearsToPayOff} years
+          </div>
+          <div className="text-sm font-bold text-right" style={{ color: '#4338ca' }}>
+            {isImpossible ? '∞' : `${result.yearsToPayOffToday} years`}
+          </div>
+        </div>
+      </div>
+
+      {/* Required salary callout */}
+      <div
+        className="rounded-lg p-4 mb-6 fade-in fade-in-d2"
+        style={{
+          background: salaryGap > 0 ? 'var(--danger-light)' : 'var(--accent-light)',
+          border: salaryGap > 0 ? '1px solid #fecaca' : '1px solid var(--accent-border)',
+        }}
+      >
+        <div className="flex gap-3">
+          <span className="text-base mt-0.5 shrink-0">💰</span>
+          <div className="text-sm leading-relaxed" style={{ color: salaryGap > 0 ? '#991b1b' : '#065f46' }}>
+            <p className="font-medium mb-1">
+              {salaryGap > 0 ? 'The salary a young person would actually need' : 'What a young person would need to earn'}
+            </p>
+            <p>
+              To replicate your experience in <strong>{suburbData.suburb}</strong> today — paying off an equivalent home in{' '}
+              {input.yearsToPayOff} years, spending {formatPercent(result.boomerRepaymentToIncomePercent)} of their income — they would need to earn{' '}
+              <strong className="text-base" style={{ color: salaryGap > 0 ? '#7f1d1d' : '#064e3b' }}>
+                {formatCurrency(result.requiredSalary)}/year
+              </strong>.
+            </p>
+            <p className="mt-2">
+              The current national median salary is {formatCurrency(result.currentMedianSalary)}.{' '}
+              {salaryGap > 0
+                ? <>That&apos;s a gap of <strong>{formatCurrency(salaryGap)}</strong>.</>
+                : <>That&apos;s actually <strong>{formatCurrency(Math.abs(salaryGap))}</strong> below the median.</>
+              }
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Salary data note */}
+      <div
+        className="rounded-lg p-4 mb-6 fade-in fade-in-d2"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+      >
+        <div className="flex gap-3">
+          <span className="text-base mt-0.5 shrink-0">ℹ️</span>
+          <div className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+            <p className="font-medium mb-1" style={{ color: 'var(--foreground)' }}>
+              About the salary data
+            </p>
+            <p>
+              Salary data uses the <strong style={{ color: 'var(--foreground)' }}>national median</strong> ({formatCurrency(result.currentMedianSalary)}/yr)
+              as suburb-level salary statistics are not publicly available. The house price
+              of {formatCurrency(suburbData.medianPrice)} is the real median for {suburbData.suburb}.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Sources */}
+      <details className="card mb-8 fade-in fade-in-d3">
+        <summary className="px-5 py-3 text-sm font-medium cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
+          Sources &amp; methodology
+        </summary>
+        <div className="px-5 pb-4 text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            Sources:
+          </p>
+          <p className="text-xs ml-3" style={{ color: 'var(--text-tertiary)' }}>
+            Suburb median house price — Government quarterly property sales reports ({suburbData.dataDate}).
+          </p>
+          <p className="text-xs ml-3" style={{ color: 'var(--text-tertiary)' }}>
+            Mortgage rate — {market.rateSource}.
+          </p>
+          <p className="text-xs ml-3" style={{ color: 'var(--text-tertiary)' }}>
+            Median salary — {market.salarySource} (national).
+          </p>
+          <p className="text-xs italic mt-1" style={{ color: 'var(--text-tertiary)' }}>
+            NOTE: Simplified model; does not account for deposit, LMI, or stamp duty.
+          </p>
+        </div>
+      </details>
+
+      {/* Navigation */}
+      <div className="flex gap-3 flex-wrap">
+        <button onClick={onBackToNational} className="bg-neutral-100! hover:bg-neutral-200! btn-secondary">
+          ← Back to national results
+        </button>
+        <button onClick={onReset} className="bg-neutral-100! hover:bg-neutral-200! btn-secondary">
+          ↺ Try different values
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function CalculatorPage() {
   const [phase, setPhase] = useState<Phase>('input');
   const [result, setResult] = useState<CalculationResult | null>(null);
+  const [preciseResult, setPreciseResult] = useState<CalculationResult | null>(null);
+  const [suburbData, setSuburbData] = useState<SuburbData | null>(null);
+  const [isSearchingSuburb, setIsSearchingSuburb] = useState(false);
+  const [suburbSearchError, setSuburbSearchError] = useState<string | null>(null);
   const [selectedMarket, setSelectedMarket] = useState<MarketId>('AU');
   const markets = getMarkets();
   const currentMarket = getMarket(selectedMarket);
@@ -587,16 +940,58 @@ export default function CalculatorPage() {
   const handleReset = useCallback(() => {
     setPhase('input');
     setResult(null);
+    setPreciseResult(null);
+    setSuburbData(null);
+    setSuburbSearchError(null);
     setFormValues({ housePrice: '', annualSalary: '', yearsToPayOff: '', yearPurchased: '' });
     setErrors({});
   }, []);
 
+  const handleSuburbLookup = useCallback(async (query: string) => {
+    setIsSearchingSuburb(true);
+    setSuburbSearchError(null);
+
+    try {
+      const response = await fetch(`/api/suburb?q=${encodeURIComponent(query)}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        setSuburbSearchError(data.error || 'Failed to look up suburb data.');
+        return;
+      }
+
+      const sd: SuburbData = data;
+      setSuburbData(sd);
+
+      // Calculate precise result
+      const precise = calculatePreciseResult(input, sd);
+      setPreciseResult(precise);
+      setPhase('precise');
+    } catch {
+      setSuburbSearchError('Something went wrong. Please check your connection and try again.');
+    } finally {
+      setIsSearchingSuburb(false);
+    }
+  }, [input]);
+
   if (phase === 'loading') return <LoadingScreen />;
+  if (phase === 'precise' && preciseResult && result && suburbData) {
+    return (
+      <PreciseResultsScreen
+        result={preciseResult}
+        nationalResult={result}
+        input={input}
+        suburbData={suburbData}
+        onReset={handleReset}
+        onBackToNational={() => setPhase('results')}
+      />
+    );
+  }
   if (phase === 'results' && result) {
     const isRecentPurchase = input.yearPurchased >= 2015;
     return isRecentPurchase
-      ? <AffordabilityScreen result={result} input={input} onReset={handleReset} />
-      : <ResultsScreen result={result} input={input} onReset={handleReset} />;
+      ? <AffordabilityScreen result={result} input={input} onReset={handleReset} onSuburbLookup={handleSuburbLookup} isSearchingSuburb={isSearchingSuburb} suburbSearchError={suburbSearchError} />
+      : <ResultsScreen result={result} input={input} onReset={handleReset} onSuburbLookup={handleSuburbLookup} isSearchingSuburb={isSearchingSuburb} suburbSearchError={suburbSearchError} />;
   }
 
   return (

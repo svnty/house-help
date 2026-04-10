@@ -43,11 +43,11 @@ const MARKETS: Record<MarketId, MarketData> = {
     locale: 'en-AU',
     enabled: true,
     medianHousePrice: 1_000_000,
-    medianSalary: 80_000,
+    medianSalary: 90_500,
     currentInterestRate: 0.06,
     defaultLoanTermYears: 30,
     housePriceSource: 'CoreLogic 2026',
-    salarySource: 'ABS 2026',
+    salarySource: 'ABS Average Weekly Earnings, full-time median (Nov 2025)',
     rateSource: 'RBA/major banks 2026',
     historicalRates: {
       1970: 0.059, 1971: 0.073, 1972: 0.073, 1973: 0.078, 1974: 0.095,
@@ -87,11 +87,11 @@ const MARKETS: Record<MarketId, MarketData> = {
     locale: 'en-US',
     enabled: true,
     medianHousePrice: 420_000,
-    medianSalary: 60_000,
+    medianSalary: 63_000,
     currentInterestRate: 0.069,
     defaultLoanTermYears: 30,
     housePriceSource: 'NAR / Census Bureau 2026',
-    salarySource: 'BLS 2026',
+    salarySource: 'BLS Median Usual Weekly Earnings, full-time (Q4 2025)',
     rateSource: 'Freddie Mac PMMS 2026',
     historicalRates: {
       1970: 0.085, 1971: 0.073, 1972: 0.072, 1973: 0.080, 1974: 0.097,
@@ -130,11 +130,11 @@ const MARKETS: Record<MarketId, MarketData> = {
     locale: 'en-CA',
     enabled: true,
     medianHousePrice: 700_000,
-    medianSalary: 65_000,
+    medianSalary: 60_000,
     currentInterestRate: 0.055,
     defaultLoanTermYears: 25,
     housePriceSource: 'CREA 2026',
-    salarySource: 'StatCan 2026',
+    salarySource: 'Statistics Canada, median individual income (2025)',
     rateSource: 'Bank of Canada 2026',
     historicalRates: {
       1970: 0.095, 1971: 0.095, 1972: 0.092, 1973: 0.095, 1974: 0.115,
@@ -177,7 +177,7 @@ const MARKETS: Record<MarketId, MarketData> = {
     currentInterestRate: 0.055,
     defaultLoanTermYears: 25,
     housePriceSource: 'ONS 2026',
-    salarySource: 'ONS 2026',
+    salarySource: 'ONS Annual Survey of Hours and Earnings, full-time median (2025)',
     rateSource: 'Bank of England 2026',
     historicalRates: {
       1970: 0.085, 1971: 0.080, 1972: 0.080, 1973: 0.095, 1974: 0.110,
@@ -276,6 +276,38 @@ export interface BoomerInput {
   yearsToPayOff: number;
   yearPurchased: number;
   market: MarketId;
+}
+
+export interface SuburbData {
+  suburb: string;
+  state: string;
+  postcode: string;
+  medianPrice: number;
+  dataDate: string | null;
+  numberSold: number | null;
+}
+
+// ============================================================
+// AU Postcode → State Mapping
+// ============================================================
+
+export function getStateFromPostcode(postcode: string): string | null {
+  const pc = parseInt(postcode, 10);
+  if (isNaN(pc)) return null;
+  if (pc >= 2000 && pc <= 2599) return 'NSW';
+  if (pc >= 2619 && pc <= 2899) return 'NSW';
+  if (pc >= 2921 && pc <= 2999) return 'NSW';
+  if (pc >= 2600 && pc <= 2618) return 'ACT';
+  if (pc >= 2900 && pc <= 2920) return 'ACT';
+  if (pc >= 3000 && pc <= 3999) return 'VIC';
+  if (pc >= 4000 && pc <= 4999) return 'QLD';
+  if (pc >= 5000 && pc <= 5799) return 'SA';
+  if (pc >= 6000 && pc <= 6797) return 'WA';
+  if (pc >= 7000 && pc <= 7799) return 'TAS';
+  if (pc >= 800 && pc <= 899) return 'NT';
+  if (pc >= 200 && pc <= 299) return 'ACT';
+  if (pc >= 1000 && pc <= 1999) return 'NSW'; // PO Boxes
+  return null;
 }
 
 export interface CalculationResult {
@@ -407,6 +439,77 @@ export function calculateBoomerMoment(input: BoomerInput): CalculationResult {
     yearsToPayOffToday: Math.round(yearsToPayOffToday * 10) / 10,
     requiredSalary,
     currentMedianHousePrice: market.medianHousePrice,
+    currentMedianSalary: market.medianSalary,
+    currentInterestRate: market.currentInterestRate,
+    market,
+  };
+}
+
+/**
+ * Re-run the boomer moment calculation but substitute a suburb-level
+ * median house price instead of the national median.
+ */
+export function calculatePreciseResult(
+  input: BoomerInput,
+  suburbData: SuburbData
+): CalculationResult {
+  const { housePrice, annualSalary, yearsToPayOff, yearPurchased, market: marketId } = input;
+  const market = getMarket(marketId);
+
+  // ---- BOOMER ERA (unchanged) ----
+  const boomerPriceToIncomeRatio = housePrice / annualSalary;
+  const boomerInterestRate = getHistoricalRate(market, yearPurchased);
+  const boomerMonthlyRepayment = calculateMonthlyRepayment(
+    housePrice, boomerInterestRate, yearsToPayOff
+  );
+  const boomerMonthlyIncome = annualSalary / 12;
+  const boomerRepaymentToIncomePercent = (boomerMonthlyRepayment / boomerMonthlyIncome) * 100;
+
+  // ---- SCALE HOUSE PRICE using SUBURB median ----
+  const historicalMedianAtPurchase = getHistoricalMedianPrice(market, yearPurchased);
+  const scaleFactor = housePrice / historicalMedianAtPurchase;
+  // Use suburb median instead of national median
+  const scaledTodayHousePrice = Math.round(scaleFactor * suburbData.medianPrice);
+
+  // ---- TODAY (using suburb-scaled house price) ----
+  const todayPriceToIncomeRatio = scaledTodayHousePrice / market.medianSalary;
+  const todayMonthlyRepayment = calculateMonthlyRepayment(
+    scaledTodayHousePrice, market.currentInterestRate, market.defaultLoanTermYears
+  );
+  const todayMonthlyIncome = market.medianSalary / 12;
+  const todayRepaymentToIncomePercent = (todayMonthlyRepayment / todayMonthlyIncome) * 100;
+
+  // THE BIG REVEAL
+  const matchingMonthlyPayment = (boomerRepaymentToIncomePercent / 100) * todayMonthlyIncome;
+  let yearsToPayOffToday: number;
+  if (matchingMonthlyPayment <= (scaledTodayHousePrice * (market.currentInterestRate / 12))) {
+    yearsToPayOffToday = 999;
+  } else {
+    yearsToPayOffToday = calculateYearsToPayOff(
+      scaledTodayHousePrice, market.currentInterestRate, matchingMonthlyPayment
+    );
+  }
+
+  // Required salary
+  const todayMonthlyRepaymentSameTerm = calculateMonthlyRepayment(
+    scaledTodayHousePrice, market.currentInterestRate, yearsToPayOff
+  );
+  const requiredMonthlyIncome = todayMonthlyRepaymentSameTerm / (boomerRepaymentToIncomePercent / 100);
+  const requiredSalary = Math.round(requiredMonthlyIncome * 12);
+
+  return {
+    boomerPriceToIncomeRatio,
+    boomerMonthlyRepayment,
+    boomerRepaymentToIncomePercent,
+    boomerInterestRate,
+    scaledTodayHousePrice,
+    historicalMedianAtPurchase,
+    todayPriceToIncomeRatio,
+    todayMonthlyRepayment,
+    todayRepaymentToIncomePercent,
+    yearsToPayOffToday: Math.round(yearsToPayOffToday * 10) / 10,
+    requiredSalary,
+    currentMedianHousePrice: suburbData.medianPrice, // suburb price, not national
     currentMedianSalary: market.medianSalary,
     currentInterestRate: market.currentInterestRate,
     market,
